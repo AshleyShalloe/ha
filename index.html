@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        html {
+            font-family: sans-serif;
+        }
+
+        .refSelector button {
+            background: white;
+            color: black;
+            box-shadow: 2px 2px 4px #80808080, -2px -2px 4px #ffffff6b;
+            border-radius: 0.4em;
+            border: 1px solid rgb(237, 237, 237);
+            transition: border 0.5s;
+            cursor: pointer;
+            user-select: none;
+            padding: 5px;
+            margin: 3px;
+        }
+
+        .refSelector button:active {
+            color: darkblue;
+            box-shadow: inset 2px 2px 4px #80808080, inset -2px -2px 4px #ffffff6b;
+        }
+
+        .refSelector button:hover {
+            border: 1px solid rgb(217, 217, 217);
+        }
+
+        .refSelector .selected {
+            background: rgb(69, 34, 102);
+            color: white;
+        }
+
+        .seqaa {
+            text-align: center;
+            border: 1px solid lightgray;
+            font-family: monospace;
+            width: 4ch;
+            display: inline-block;
+        }
+
+        #resultContainer {
+            overflow-x: scroll;
+            white-space: nowrap;
+            /* scroll-behavior: smooth; */
+        }
+
+        .seqaa.seqDel {
+            background: lightgray;
+        }
+
+        .selectedRefPos {
+            background: skyblue;
+        }
+    </style>
+    <script type="text/javascript" src="ref.js"></script>
+</head>
+
+<body>
+
+    <h2>Reference</h2>
+    <div id="refSelector0" class="refSelector"></div>
+    <h2>Query</h2>
+    <div id="refSelector1" class="refSelector"></div>
+    <h2>Result</h2>
+    <div id="resultContainer">
+        <div id="refResult"></div>
+        <div id="queryResult"></div>
+    </div>
+    <h2>Spinner</h2>
+    <input type="number" oninput="scrollToPos(this.value)" />
+    <div id="mappedPos" style="display: inline-block"></div>
+</body>
+<script>
+    'use strict'
+
+    // jank list
+    // - switching ref/query doesn't update spinner
+    // - spinner is active before ref/query selected
+    // - cannot select position 1 for some reason
+    // - can spin to negative positions
+    // - can spin past the end
+    // - query and ref can be the same. Maybe hide query seq in result?
+
+    function scrollToPos(inputPos) {
+        [...document.getElementsByClassName("selectedRefPos")].forEach(x => x.classList.remove("selectedRefPos"));
+        document.getElementById("mappedPos").innerText = ""
+
+        var positionElements = refResultElm.getElementsByClassName("seqpos")
+        var [targetElm, idxOfPosInRef] = [...positionElements].map((x, i) => [x, i]).filter(x => x[0].innerText == inputPos ? x[1] : false)[0]
+        var pctOfPosInRef = idxOfPosInRef / positionElements.length
+
+        var resConElm = document.getElementById("resultContainer")
+        var scrollPct = pctOfPosInRef * resConElm.scrollWidth
+        var offset = resConElm.offsetWidth / 2
+        resConElm.scrollLeft = scrollPct - offset
+
+        targetElm.classList.add("selectedRefPos")
+
+        var mappedPos = queryResultElm.getElementsByClassName("seqpos")[idxOfPosInRef].innerText
+        document.getElementById("mappedPos").innerText = `maps to ${mappedPos.length ? mappedPos : 'a deletion'}`
+    }
+
+    function unstyleButtons(x) {
+        if (x) {
+            [...document.querySelectorAll("#refSelector1 .selected")].forEach(x => x.classList.remove("selected"))
+        }
+        else {
+            [...document.querySelectorAll("#refSelector0 .selected")].forEach(x => x.classList.remove("selected"))
+        }
+    }
+
+    function setRefAndQuery() {
+        var inputRefBtnElm = document.querySelector("#refSelector0 button.selected")
+        var inputQueryBtnElm = document.querySelector("#refSelector1 button.selected")
+
+        if (!(inputRefBtnElm && inputQueryBtnElm)) {
+            return
+        }
+
+        var inputRefName = inputRefBtnElm.innerText
+        var refData = refjson[inputRefName];
+        var inputQueryName = inputQueryBtnElm.innerText
+        var queryData = refjson[inputQueryName];
+
+        // rest of the script
+        var refElms = []
+        var queryElms = []
+
+        for (var i in refData) {
+            var tempElmAA = document.createElement("div")
+            var position = refData[i] ? refData[i].slice(0, -1) : ""
+            var aminoAcid = refData[i] ? refData[i].slice(-1) : ""
+            var tempElmAAQuery = document.createElement("div")
+            var positionQuery = queryData[i] ? queryData[i].slice(0, -1) : ""
+            var aminoAcidQuery = queryData[i] ? queryData[i].slice(-1) : ""
+
+            // skip position if deletion in both query and ref
+            if ((aminoAcid == "\u2206") && (aminoAcidQuery == "\u2206")) {
+                continue
+            }
+
+            // skip position if blank in both query and ref
+            if ((aminoAcid == "") && (aminoAcidQuery == "")) {
+                continue
+            }
+
+            tempElmAA.innerHTML = `<div class='seqpos'>${position}</div><div class='seqslc'>${aminoAcid}</div>`
+            tempElmAA.classList.add("seqaa")
+            if (aminoAcid == "\u2206") {
+                tempElmAA.classList.add("seqDel")
+            }
+            refElms.push(tempElmAA)
+
+            tempElmAAQuery.innerHTML = `<div class='seqpos'>${positionQuery}</div><div class='seqslc'>${aminoAcidQuery}</div>`
+            tempElmAAQuery.classList.add("seqaa")
+            if (aminoAcidQuery == "\u2206") {
+                tempElmAAQuery.classList.add("seqDel")
+            }
+            queryElms.push(tempElmAAQuery)
+        }
+
+        refResultElm.innerHTML = ""
+        refElms.forEach(x => refResultElm.appendChild(x))
+        queryResultElm.innerHTML = ""
+        queryElms.forEach(x => queryResultElm.appendChild(x))
+    }
+
+    function initRefSelector() {
+        var refSelector0Elm = document.getElementById("refSelector0")
+        var refSelector1Elm = document.getElementById("refSelector1")
+
+        refSelector0Elm.innerHTML = ""
+
+        refNameArray.forEach(x => {
+            var tempElm = document.createElement("button")
+            tempElm.innerText = x
+            tempElm.setAttribute("onclick", "unstyleButtons(0); this.classList.add('selected'); setRefAndQuery()")
+            refSelector0Elm.appendChild(tempElm)
+        })
+
+        refNameArray.forEach(x => {
+            var tempElm = document.createElement("button")
+            tempElm.innerText = x
+            tempElm.setAttribute("onclick", "unstyleButtons(1); this.classList.add('selected'); setRefAndQuery()")
+            refSelector1Elm.appendChild(tempElm)
+        })
+    }
+
+    // globals
+    const refNameArray = [...Object.keys(refjson)]
+    const refResultElm = document.getElementById("refResult")
+    const queryResultElm = document.getElementById("queryResult")
+    var numberingScheme = ["matureH5", "met1"][0]
+
+    // init
+    function init() {
+        initRefSelector();
+    }
+
+    init();
+</script>
+
+</html>
